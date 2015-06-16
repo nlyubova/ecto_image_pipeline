@@ -35,19 +35,25 @@ struct RescaledRegisteredDepth {
     cv::Mat valid_mask;
     rescaleDepth(*depth_in_, CV_32F, depth);
 
-    float factor = float(isize.width) / dsize.width; //scaling factor.
+    float factor = float(isize.height) / dsize.height;
     cv::Mat output(isize, depth.type());
     //resize into the subregion of the correct aspect ratio
-    cv::Mat subregion(output.rowRange(0, dsize.height * factor));
+    int cols_nbr = dsize.width  *factor;
+    int col_start = round((isize.width - cols_nbr)/2);
+    cv::Mat subregion(output.colRange(col_start, cols_nbr+col_start));
     //use nearest neighbor to prevent discontinuities causing bogus depth.
     cv::resize(depth, subregion, subregion.size(), CV_INTER_NN);
-    output.rowRange(dsize.height * factor, output.rows).setTo(
+    if (col_start > 0)
+    output.colRange(0, col_start-1).setTo(
+        cv::Scalar(std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::quiet_NaN(),
+            std::numeric_limits<float>::quiet_NaN()));
+    output.colRange(cols_nbr+col_start, output.cols).setTo(
         cv::Scalar(std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::quiet_NaN(),
             std::numeric_limits<float>::quiet_NaN()));
     *depth_out_ = output;
 
     //rescale the calibration matrix
-    K_out_->at<float>(0, 0) = K_out_->at<float>(0, 0) * factor;
+    K_out_->at<float>(0, 0) = K_out_->at<float>(0, 0) * static_cast<float>(isize.width) / static_cast<float>(dsize.width); //K_out_->at<float>(0, 0) * factor;
     K_out_->at<float>(1, 1) = K_out_->at<float>(1, 1) * static_cast<float>(isize.height) / static_cast<float>(dsize.height);
     K_out_->at<float>(0, 2) = static_cast<float>(isize.width-1) / 2.0f;
     K_out_->at<float>(1, 2) = static_cast<float>(isize.height-1) / 2.0f;
@@ -55,10 +61,12 @@ struct RescaledRegisteredDepth {
     if (!mask_in_->empty()) {
       assert(mask_in_->size() == depth_in_->size());
       cv::Mat mask(isize, CV_8U);
-      cv::Mat subregion(mask.rowRange(0, dsize.height * factor));
+      cv::Mat subregion(mask.colRange(col_start, cols_nbr+col_start));
       //use nearest neighbor to prevent discontinuities causing bogus depth.
       cv::resize(*mask_in_, subregion, subregion.size(), CV_INTER_NN);
-      mask.rowRange(dsize.height * factor, output.rows).setTo(cv::Scalar(0, 0, 0));
+      if (col_start > 0)
+        mask.colRange(0, col_start-1).setTo(cv::Scalar(0, 0, 0));
+      mask.colRange(cols_nbr+col_start, output.cols).setTo(cv::Scalar(0, 0, 0));
       *mask_out_ = mask;
     }
 
